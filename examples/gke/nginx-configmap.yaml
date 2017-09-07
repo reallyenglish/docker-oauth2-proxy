@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+data:
+  "oauth2-proxy.inc": |
+    location /oauth2/ {
+      proxy_pass       http://127.0.0.1:4180;
+      proxy_pass_request_body off;
+      proxy_set_header Content-Length "";
+      proxy_set_header Host                    $host;
+      proxy_set_header X-Real-IP               $remote_addr;
+      proxy_set_header X-Scheme                $scheme;
+      proxy_set_header X-Auth-Request-Redirect $request_uri;
+      proxy_set_header X-Original-URI          $request_uri;
+      proxy_set_header X-Forwarded-For         $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto       $scheme;
+    }
+
+  "oauth2-request.inc": |
+    auth_request /oauth2/auth;
+    error_page 401 = /oauth2/sign_in;
+
+    # pass information via X-User and X-Email headers to backend,
+    # requires running with --set-xauthrequest flag
+    auth_request_set $user   $upstream_http_x_auth_request_user;
+    auth_request_set $email  $upstream_http_x_auth_request_email;
+    # if you enabled --cookie-refresh, this is needed for it to work with auth_request
+    auth_request_set $auth_cookie $upstream_http_set_cookie;
+    auth_request_set $auth_status $upstream_status;
+
+    proxy_set_header X-User  $user;
+    proxy_set_header X-Email $email;
+
+    add_header Set-Cookie $auth_cookie;
+    add_header Content-Security-Policy upgrade-insecure-requests;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    proxy_set_header Host                    $host;
+    proxy_set_header Upgrade                 $http_upgrade;
+    proxy_set_header Connection              $proxy_connection;
+    proxy_set_header X-Real-IP               $remote_addr;
+    proxy_set_header X-Scheme                $scheme;
+    proxy_set_header X-Forwarded-Proto       $scheme;
+    proxy_set_header X-Forwarded-For         $proxy_add_x_forwarded_for;
+    proxy_set_header X-Auth-Request-Redirect $request_uri;
+
+  "default.conf": |
+    ssl_certificate /etc/nginx/ssl/cert.pem;
+    ssl_certificate_key /etc/nginx/ssl/key.pem;
+    ssl_dhparam /etc/nginx/ssl/dhparam.pem;
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers ECDH+AESGCM:ECDH+AES256:ECDH+AES128:DHE+AES128:!ADH:!AECDH:!MD5;
+    ssl_session_cache shared:SSL:20m;
+    ssl_session_timeout 3h;
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    ssl_trusted_certificate /etc/nginx/ssl/trusted.pem;
+    resolver 8.8.8.8 8.8.4.4;
+
+    map $http_x_forwarded_proto $proxy_x_forwarded_proto {
+      default $http_x_forwarded_proto;
+      ''      $scheme;
+    }
+
+    map $http_upgrade $proxy_connection {
+      default upgrade;
+      '' close;
+    }
+
+    server {
+      listen 80 default_server;
+      listen 443 ssl default_server;
+      server_name localhost;
+      root /usr/share/nginx/html;
+      location /healthz {
+        return 204;
+      }
+      error_page   500 502 503 504  /50x.html;
+    }
+    # redirect http to https
+    server {
+      listen 80;
+      server_name app1.example.com;
+      return 301 https://$server_name$request_uri;
+    }
+    # assume you'll deploy an application in `app1` namespace with service `web`
+    server {
+      listen 443 ssl http2;
+      server_name app1.example.com;
+      include /etc/nginx/conf.d/oauth2-proxy.inc;
+      location / {
+        include /etc/nginx/conf.d/oauth2-request.inc;
+        proxy_pass http://web.app1;
+      }
+    }
+
+    # another application in `app2` namespace with service `web`
+    server {
+      listen 80;
+      server_name app2.example.com;
+      return 301 https://$server_name$request_uri;
+    }
+    server {
+      listen 443 ssl http2;
+      server_name app2.example.com;
+      include /etc/nginx/conf.d/oauth2-proxy.inc;
+      location / {
+        include /etc/nginx/conf.d/oauth2-request.inc;
+        proxy_pass http://web.app2;
+      }
+    }

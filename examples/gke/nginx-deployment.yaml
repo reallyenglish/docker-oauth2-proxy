@@ -1,0 +1,58 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: reverse-proxy
+spec:
+  replicas: 3
+  revisionHistoryLimit: 1
+  template:
+    metadata:
+      labels:
+        role: rproxy
+    spec:
+      containers:
+      - name: oauth
+        image: reallyenglish/oauth2-proxy
+        imagePullPolicy: Always
+        command:
+          - "oauth2_proxy"
+          - "--cookie-name=oauth2proxy"
+          - "--cookie-domain=.example.com"
+          - "--cookie-secure=true"
+          - "--email-domain=example.com"
+          - "--upstream=file:///usr/share/www"
+          - "--footer=-"
+          - "--set-xauthrequest"
+        ports:
+        - containerPort: 4180
+        envFrom:
+        - secretRef:
+            name: oauth
+
+      - name: nginx
+        image: nginx:1.13
+        ports:
+        - containerPort: 80
+        - containerPort: 443
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 80
+          initialDelaySeconds: 3
+          periodSeconds: 3
+          failureThreshold: 5
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/conf.d
+        - name: ssl
+          mountPath: /etc/nginx/ssl
+          readOnly: true
+
+      volumes:
+      - name: config
+        configMap:
+          name: nginx-config
+      - name: ssl
+        secret:
+          defaultMode: 0400
+          secretName: ssl-cert
