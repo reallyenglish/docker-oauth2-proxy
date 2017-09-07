@@ -15,7 +15,7 @@ $ gcloud compute networks subnets create "default" --network "oauth-demo" --rang
 $ gcloud compute firewall-rules create "default-allow-ssh" --network oauth-demo --allow tcp:22
 $ gcloud compute firewall-rules create "default-allow-internal" --network "oauth-demo" --allow all --source-ranges "10.128.0.0/9"
 $ gcloud container clusters create "oauth-demo" --cluster-version "1.7.4" --zone "asia-northeast1-a" --machine-type "n1-standard-4" --disk-size "200" --num-nodes "1" --network "oauth-demo" --subnetwork "default" --enable-cloud-logging --enable-cloud-monitoring
-$ kubectl create namespace proxy
+$ kubectl create namespace rproxy
 ```
 
 ### Step 1. Create Google Auth Provider
@@ -87,5 +87,5 @@ gcloud compute addresses create ia-proxy --region asia-northeast1
 
 Change `example.com` with proper domain in `*.yaml` files, then deploy:
 ```
-$ kubectl apply -f . --namespace=proxy
+$ kubectl apply -f . --namespace=rproxy
 ```
